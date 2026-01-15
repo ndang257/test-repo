@@ -5,5 +5,10 @@ In the following repository, you will find the ETL process using different tools
 OBETA is an innovative reseller of tools and equipment for electricians. Besides the stores, the firm also sells products online and through sales representatives, especially for customers with high values and high turnover. The management wants to improve the warehouse processes und logistics. Therefore, it has hired you and your team as data science experts to achieve this goal.
 
 ## Team Organization
-![image](C:\Users\DangNgoc\GitHub\obeta-lrin\Media\Toolchain_V2.png "Toolchai Diagram")
+<figure>
+  <img
+  src="\Media\Toolchain_V2.png""
+  alt="Toolchain Diagram.">
+  <figcaption>Toolchain Diagram</figcaption>
+</figure>
 ## ETL Conceptualization
