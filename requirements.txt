@@ -1,0 +1,16 @@
+# Required Softwares 
+mysql == 8.1.0
+Python == 3.14.0
+
+# Required Python Libraries
+sqlalchemy == 
+pandas ==
+numpy ==
+scipy == # What for?
+typing == # What for?
+sqlalchemy == 
+pymysql ==
+matplotlib ==
+seaborn ==
+random ==  
+
