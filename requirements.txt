@@ -1,4 +1,4 @@
-# Required Softwares 
+# Required Software
 mysql == 8.1.0
 Python == 3.14.0
 
@@ -6,8 +6,8 @@ Python == 3.14.0
 sqlalchemy == 
 pandas ==
 numpy ==
-scipy == # What for?
-typing == # What for?
+scipy == mathematical calculations and functions built on NumPy. The stats subpackage enables a variety of statistical calculations.
+typing == defines a standard notation for Python function and variable type annotations
 sqlalchemy == 
 pymysql ==
 matplotlib ==
