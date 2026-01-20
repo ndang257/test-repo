@@ -12,5 +12,7 @@ sqlalchemy ==
 pymysql ==
 matplotlib ==
 seaborn ==
-random ==  
+random == 
+collections == provides specialized container datatypes. Used here to count hashable objects.
+itertools == provides a collection of tools for working with iterators. Used here to construct combinations of products.
 
