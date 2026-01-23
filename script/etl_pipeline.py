@@ -1,105 +1,117 @@
-
-#%%
+# ==========================================
+# 1. Configuration & Imports
+# ==========================================
 import pandas as pd
-import numpy as np
-from sqlalchemy import create_engine
-from typing import Optional, Literal
-from urllib.parse import quote_plus
+from sqlalchemy import create_engine, inspect
+from datetime import datetime
+import os
+import pymysql
+import gzip
+# Imports from other scripts
+from db_backup import get_db_engine, create_backup, SOURCE_DB_CONFIG
+from transformation import (
+    flag_outliers_by_unit,
+    summarize_year,
+    clean_products,
+    create_product_groups,
+    create_date_table
+)
 
 # ==========================================
-# 1. Configuration
+# 2. ETL Stages
 # ==========================================
 
-# Database Configurations (Update these credentials)
-SOURCE_DB_CONFIG = {
-    "user": "root",
-    "password": "mysql",
-    "host": "localhost",
-    "port": "3306",
-    "database": "obeta_db"
-}
-
-TARGET_DB_CONFIG = {
-    "user": "root",
-    "password": "mysql",
-    "host": "localhost",
-    "port": "3306",
-    "database": "obeta_db_staging"
-}
-
-# Helper to create connection string
-def get_db_engine(config):
-    # handling special characters in password
-    password = quote_plus(config['password']) 
-    connection_str = f"mysql+pymysql://{config['user']}:{password}@{config['host']}:{config['port']}/{config['database']}"
-    return create_engine(connection_str)
-
-# ==========================================
-# 2. Transformation Helper Functions
-# ==========================================
-
-def flag_outliers_by_unit(
-    df: pd.DataFrame,
-    value_col: str,
-    *,
-    group_col: str = "quantity_unit",
-    method: Literal["zscore", "modified"] = "zscore",
-    threshold: Optional[float] = None,
-    ddof: int = 0,
-    min_group_size: int = 3,
-) -> pd.DataFrame:
-    """
-    Logic imported from notebook to flag outliers.
-    """
-    if threshold is None:
-        threshold = 3.0 if method == "zscore" else 3.5
-
-    out = df.copy()
-    x = pd.to_numeric(out[value_col], errors="coerce")
-    flag_col = f"{value_col}_is_outlier_by_{group_col}"
-
-    def compute_group_flags(g: pd.Series) -> pd.DataFrame:
-        res = pd.DataFrame(index=g.index)
-        valid = g.dropna()
-        
-        if valid.size < min_group_size:
-            res[flag_col] = False
-            return res
-
-        if method == "zscore":
-            mean = valid.mean()
-            std = valid.std(ddof=ddof)
-            if std == 0 or np.isnan(std):
-                z = pd.Series(0.0, index=g.index)
-            else:
-                z = (g - mean) / std
-        elif method == "modified":
-            med = valid.median()
-            mad = (valid - med).abs().median()
-            if mad == 0 or np.isnan(mad):
-                z = pd.Series(0.0, index=g.index)
-            else:
-                z = 0.6745 * (g - med) / mad
-        else:
-            raise ValueError("method must be 'zscore' or 'modified'")
-
-        res[flag_col] = z.abs().gt(threshold).fillna(False)
-        return res
-
-    flags = x.groupby(out[group_col], dropna=False).apply(compute_group_flags)
+def extract_from_source():
+    """Extracts raw data from the source MySQL database."""
+    print("--- Extracting Data from MySQL ---")
+    # Uses the engine and config imported from db_backup
+    source_engine = get_db_engine(SOURCE_DB_CONFIG)
     
-    # Handle the multi-index returned by groupby.apply
-    if isinstance(flags.index, pd.MultiIndex):
-        flags.index = flags.index.get_level_values(-1)
+    # Load raw data into DataFrames
+    pick_df = pd.read_sql("SELECT * FROM pick_data", source_engine)
+    product_df = pd.read_sql("SELECT * FROM product_data", source_engine)
+    
+    return pick_df, product_df
 
-    out[flag_col] = flags[flag_col]
-    return out
+def transform_pipeline(pick_df, product_df):
+    """Orchestrates transformation using functions from transformation.py."""
+    print("--- Transforming Data ---")
+
+    # 1. Basic Cleaning & IDs
+    pick_df['date'] = pd.to_datetime(pick_df['date'])
+    pick_df['pick_id'] = range(1, len(pick_df) + 1)
+    pick_df['year_of_order'] = pick_df['date'].dt.year.astype(str)
+    pick_df['updated_order_number'] = (
+        pick_df[['order_number', 'year_of_order']]
+        .astype(str)
+        .agg('-'.join, axis=1)
+    )
+
+    cleaned_picks = pick_df.dropna().drop_duplicates()
+    cleaned_picks = cleaned_picks[cleaned_picks['pick_volume'] != 0]
+
+    # 2. Outlier Detection
+    cleaned_picks = flag_outliers_by_unit(cleaned_picks, value_col="pick_volume")
+
+    # 3. Order Summaries
+    years = cleaned_picks['year_of_order'].unique()
+    summaries = pd.concat([
+        summarize_year(cleaned_picks[cleaned_picks['year_of_order'] == y]) 
+        for y in years
+    ])
+
+    # 4. Product Dimensions
+    cleaned_prod_df = clean_products(product_df)
+    
+    dim_products = cleaned_picks[['product_id', 'warehouse_section', 'quantity_unit']].copy().drop_duplicates()
+    dim_products['product_group_num'] = dim_products['product_id'].map(
+        cleaned_prod_df.set_index('product_id')['product_group']
+    )
+
+    dim_product_groups = create_product_groups(product_df)
+
+    # 5. Date Dimension
+    dim_date = create_date_table(summaries)
+
+    return {
+        "final_order_summary": summaries,
+        "dim_date": dim_date,
+        "dim_products": dim_products,
+        "dim_product_groups": dim_product_groups,
+        "fact_picks_processed": cleaned_picks
+    }
+
+def load_to_source(tables_dict):
+    """Loads all transformed DataFrames back into the source database."""
+    print("--- Loading Data Back to Source Database ---")
+    # Using the same config for the target as the source
+    engine = get_db_engine(SOURCE_DB_CONFIG)
+    
+    for table_name, df in tables_dict.items():
+        df.to_sql(table_name, engine, if_exists='replace', index=False)
+        print(f"Success: {table_name} updated in source DB.")
 
 # ==========================================
-# 3. ETL Stages
+# 2. Main Execution
 # ==========================================
 
+if __name__ == "__main__":
+    try:
+        # Step 1: Pre-ETL Backup
+        print("Initializing pre-ETL backup...")
+        backup_path = create_backup(SOURCE_DB_CONFIG, schema_only=False)
+        print(f"Backup successfully created at: {backup_path}")
 
-# ==========================================
-# 4. Main Execution
-# ==========================================
+        # Step 2: Extract
+        raw_picks, raw_prods = extract_from_source()
+
+        # Step 3: Transform
+        processed_data = transform_pipeline(raw_picks, raw_prods)
+
+        # Step 4: Load back to original DB
+        load_to_source(processed_data)
+
+        print("\nETL Pipeline completed successfully.")
+
+    except Exception as e:
+        print(f"Critical error during ETL: {e}")
