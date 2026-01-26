@@ -4,15 +4,18 @@ Python == 3.14.0
 
 # Required Python Libraries
 sqlalchemy == 
-pandas ==
+pandas == 2.3.3 # data manipulation and analysis library.
 numpy ==
-scipy == mathematical calculations and functions built on NumPy. The stats subpackage enables a variety of statistical calculations.
-typing == defines a standard notation for Python function and variable type annotations
+scipy == # mathematical calculations and functions built on NumPy. The stats subpackage enables a variety of statistical calculations.
+typing == # defines a standard notation for Python function and variable type annotations
 sqlalchemy == 
 pymysql ==
 matplotlib ==
 seaborn ==
 random == 
-collections == provides specialized container datatypes. Used here to count hashable objects.
-itertools == provides a collection of tools for working with iterators. Used here to construct combinations of products.
+datetime == 6.0 # provides classes for manipulating dates and times.
+os == # provides a way to interact with the operating system
+subprocess == # provides a way to spawn new processes, connect to their input/output/error pipes, and obtain their return codes.
+collections == # provides specialized container datatypes. Used here to count hashable objects.
+itertools == # provides a collection of tools for working with iterators. Used here to construct combinations of products.
 
