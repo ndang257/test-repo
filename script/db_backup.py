@@ -50,21 +50,23 @@ def load_schema(engine) -> dict:
 # ==========================================
 # 3. Backup Database Function
 # ==========================================
-def create_backup(config, backup_dir="backups", schema_only=False,compress=True):
-    os.makedirs(backup_dir, exist_ok=True)
+def create_backup(config, backup_dir="backups", schema_only=False, compress=True):
     """Create a backup of the MySQL database."""
+    os.makedirs(backup_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     extension = ".sql.gz" if compress else ".sql"
+
     backup_file = os.path.join(
         backup_dir,
-        f"{config['database']}_{timestamp}.sql"
+        f"{config['database']}_{timestamp}{extension}"
     )
+
     # Build mysqldump command
     dump_command = [
         "mysqldump",
         "-h", config["host"],
-        "-P", config["port"],
+        "-P", str(config["port"]),
         "-u", config["user"],
         f"--password={config['password']}",
         config["database"]
@@ -74,37 +76,41 @@ def create_backup(config, backup_dir="backups", schema_only=False,compress=True)
         dump_command.insert(1, "--no-data")
 
     if compress:
-        # Start mysqldump process
-        dump_proc = subprocess.Popen(
-            dump_command,
-            stdout=subprocess.PIPE
-        )
-
-        # Pipe output into gzip
-        with open(backup_file, "wb") as f:
-            gzip_proc = subprocess.Popen(
-                ["gzip"],
-                stdin=dump_proc.stdout,
-                stdout=f
+        # Stream mysqldump output directly into gzip
+        with gzip.open(backup_file, "wb") as gz:
+            result = subprocess.run(
+                dump_command,
+                stdout=gz,
+                stderr=subprocess.PIPE,
+                check=False,
             )
 
-        dump_proc.stdout.close()
-        gzip_proc.communicate()
-
-        if dump_proc.returncode not in (0, None):
-            raise RuntimeError("mysqldump failed")
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"mysqldump failed:\n{result.stderr.decode(errors='ignore')}"
+            )
 
     else:
         # No compression
-        with open(backup_file, "w") as f:
-            subprocess.run(dump_command, stdout=f, check=True)
+        with open(backup_file, "w") as file:
+            result = subprocess.run(
+                dump_command,
+                stdout=file,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"mysqldump failed:\n{result.stderr.decode(errors='ignore')}"
+            )
 
     return backup_file
 
 # ==========================================
 # 4. Drop All Tables in Schema
 # ==========================================
-def drop_all_tables(engine):
+#def drop_all_tables(engine):
     """Drop all tables in the connected database."""
     inspector = inspect(engine)
     tables = inspector.get_table_names()
@@ -122,7 +128,7 @@ if __name__ == "__main__":
     schema = load_schema(engine)
     print(f"Loaded schema for {len(schema)} tables")
 
-    backup_path = create_backup(SOURCE_DB_CONFIG, schema_only=False)
+    backup_path = create_backup(SOURCE_DB_CONFIG, schema_only=False, compress=True)
     print(f"Backup created at: {backup_path}")
 
-    drop_all_tables(engine)
+    #drop_all_tables(engine)
