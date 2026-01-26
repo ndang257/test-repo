@@ -8,7 +8,7 @@ import os
 import pymysql
 import gzip
 # Imports from other scripts
-from db_backup import get_db_engine, create_backup, SOURCE_DB_CONFIG
+from db_backup import get_db_engine, create_backup, SOURCE_DB_CONFIG, drop_all_tables
 from transformation import (
     flag_outliers_by_unit,
     summarize_year,
@@ -86,6 +86,8 @@ def load_to_source(tables_dict):
     print("--- Loading Data Back to Source Database ---")
     # Using the same config for the target as the source
     engine = get_db_engine(SOURCE_DB_CONFIG)
+    #drop existing tables before loading new data
+    drop_all_tables(engine)
     
     for table_name, df in tables_dict.items():
         df.to_sql(table_name, engine, if_exists='replace', index=False)

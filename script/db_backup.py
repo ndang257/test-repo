@@ -101,6 +101,21 @@ def create_backup(config, backup_dir="backups", schema_only=False,compress=True)
 
     return backup_file
 
+# ==========================================
+# 4. Drop All Tables in Schema
+# ==========================================
+def drop_all_tables(engine):
+    """Drop all tables in the connected database."""
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    if not tables:
+        print("No tables found to drop.")
+        return
+    with engine.connect() as conn:
+        for table in tables:
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+            print(f"Dropped table: {table}")
+
 # Prevent execution on import
 if __name__ == "__main__":
     engine = get_db_engine(SOURCE_DB_CONFIG)
@@ -109,3 +124,5 @@ if __name__ == "__main__":
 
     backup_path = create_backup(SOURCE_DB_CONFIG, schema_only=False)
     print(f"Backup created at: {backup_path}")
+
+    drop_all_tables(engine)
