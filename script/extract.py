@@ -44,7 +44,7 @@ product_data_config = {
     "dtypes": {
         'product_id': 'string',
         'product_description': 'string',
-        'product_group': 'category',
+        'product_group': 'string',
     }
 
 }
