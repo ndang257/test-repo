@@ -46,6 +46,7 @@ product_data_config = {
         'product_description': 'string',
         'product_group': 'category',
     }
+
 }
 
 # ==========================================
