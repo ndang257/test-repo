@@ -2,7 +2,6 @@
 import logging
 import pandas as pd
 import numpy as np
-from extract import pick_data_config, product_data_config, extract
 from flag_outlier import flag_outliers
 
 # Configure logging
@@ -11,12 +10,13 @@ logger = logging.getLogger(__name__)
 # Magic number constants
 AVG_TIME_FOR_SINGLE_PICK = 30.496420  # Average time in minutes for orders with one pick
 Z_SCORE_THRESHOLD = 3.0  # Threshold for outlier detection
-extracted_product_data = extract()[1]
-extracted_pick_data = extract()[0]
+#extracted_dfs = extract()
+#extracted_product_data = extracted_dfs[1]
+#extracted_pick_data = extracted_dfs[0]
 # ==========================================
 # 1. Transform pick_data table
 # ==========================================
-def transform_pick_data() -> pd.DataFrame:
+def transform_pick_data(pick_data: pd.DataFrame) -> pd.DataFrame:
     """
     Transform raw pick data by cleaning, creating IDs, and detecting outliers.
     Returns
@@ -25,8 +25,6 @@ def transform_pick_data() -> pd.DataFrame:
         Transformed pick data with new columns: pick_id, year_of_order,
         and outlier_by_quantity_unit flag.
     """
-    pick_data = extracted_pick_data.copy()
-    
     # Validate required columns
     required_cols = ['date', 'pick_volume', 'quantity_unit', 'order_number']
     missing_cols = [col for col in required_cols if col not in pick_data.columns]
@@ -39,12 +37,8 @@ def transform_pick_data() -> pd.DataFrame:
     pick_data['pick_id'] = range(1, len(pick_data) + 1)
     # Extract year_of_order
     pick_data['year_of_order'] = pick_data['date'].dt.year.astype(str)
-    # Update order_number column:
-    pick_data['order_number'] = (
-        pick_data[['order_number', 'year_of_order']]
-        .astype(str)
-        .agg('-'.join, axis=1)
-    )
+    # Update order_number column: 
+    pick_data['order_number'] = pick_data['order_number'].astype(str) + '-' + pick_data['year_of_order']
     
     # Cleaning steps
     pick_data = pick_data.dropna().drop_duplicates()
@@ -108,12 +102,13 @@ def create_order_summary(pick_data: pd.DataFrame) -> pd.DataFrame:
         / np.timedelta64(1, 'm')
     )
     
-    # Handle zero or missing time_to_fulfill
-    group_means = order_summary.groupby('num_picks')['time_to_fulfill'].transform('mean')
-    order_summary['time_to_fulfill'] = order_summary['time_to_fulfill'].replace(0, np.nan)
-    order_summary['time_to_fulfill'] = order_summary['time_to_fulfill'].fillna(group_means)
-    # Assign default time for orders with one pick
-    order_summary['time_to_fulfill'] = order_summary['time_to_fulfill'].fillna(AVG_TIME_FOR_SINGLE_PICK)
+    # Handle zero or missing time_to_fulfill - single chained operation (faster)
+    order_summary['time_to_fulfill'] = (
+        order_summary['time_to_fulfill']
+        .replace(0, np.nan)
+        .fillna(order_summary.groupby('num_picks')['time_to_fulfill'].transform('mean'))
+        .fillna(AVG_TIME_FOR_SINGLE_PICK)
+    )
     
     # Extract date from timestamp
     order_summary['date'] = order_summary['time_of_first_pick'].dt.date
@@ -137,7 +132,7 @@ def create_date_table(order_summary: pd.DataFrame) -> pd.DataFrame:
 # ==========================================
 # 4. Transform product_data table
 # ==========================================
-def transform_product_data() -> pd.DataFrame:
+def transform_product_data(product_data: pd.DataFrame) -> pd.DataFrame:
     """
     Transform raw product data by cleaning and extracting product group IDs.
     Returns
@@ -145,8 +140,7 @@ def transform_product_data() -> pd.DataFrame:
     pd.DataFrame
         Transformed product data with product_group_id column.
     """
-    product_data = extracted_product_data.copy()
-    
+
     # Validate required columns
     required_cols = ['product_group']
     missing_cols = [col for col in required_cols if col not in product_data.columns]
@@ -167,23 +161,24 @@ def transform_product_data() -> pd.DataFrame:
     return product_data
 # ==========================================
 # 5. Create product_group_data table
-def create_product_group_data(extracted_product_data: pd.DataFrame) -> pd.DataFrame:
+# ==========================================
+def create_product_group_data(product_data: pd.DataFrame) -> pd.DataFrame:
     """
     Create product group dimension table by parsing product group information.
     Parameters
     ----------
-    extracted_product_data : pd.DataFrame
+    product_data : pd.DataFrame
         Raw product data containing product_group column.
     Returns
     -------
     pd.DataFrame
         Product group dimension with id and name columns.
     """
-    if 'product_group' not in extracted_product_data.columns:
-        raise ValueError("'product_group' column not found in extracted_product_data")
+    if 'product_group' not in product_data.columns:
+        raise ValueError("'product_group' column not found in product_data")
 
     product_group_data = (
-        extracted_product_data.copy().drop(columns=['product_description'])
+        product_data[['product_group']]
         .drop_duplicates()
         .dropna()
         .reset_index(drop=True)
@@ -208,11 +203,11 @@ if __name__ == "__main__":
     try:
         logger.info("Starting data transformation pipeline...")
         
-        pick_data = transform_pick_data()
+        pick_data = transform_pick_data(pick_data)
         order_summary_data = create_order_summary(pick_data)
         date_table = create_date_table(order_summary_data)
-        product_data = transform_product_data()
-        product_group_data = create_product_group_data(extracted_product_data)
+        product_data = transform_product_data(product_data)
+        product_group_data = create_product_group_data(product_data)
         
         logger.info("Data transformation completed successfully")
         logger.info(f"Pick data shape: {pick_data.shape}")

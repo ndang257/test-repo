@@ -28,13 +28,13 @@ pick_data_config = {
                 'quantity_unit', 
                 'date'],
     "dtypes": {
-        'product_id': 'string', 
+        'product_id': 'int64', 
         'warehouse_section': 'category',
         'origin': 'category',
         'order_number': 'string',
         'position_in_order':'int64',
         'pick_volume': 'int64',
-        'quantity_unit': 'string',
+        'quantity_unit': 'category',  
         'date': 'string'
     }
 }
@@ -42,11 +42,10 @@ product_data_config = {
     "file_path": CSV_DIR / "product_data.csv",
     "columns": ['product_id', 'product_description', 'product_group'],
     "dtypes": {
-        'product_id': 'string',
+        'product_id': 'int64',
         'product_description': 'string',
         'product_group': 'string',
     }
-
 }
 
 # ==========================================
@@ -150,6 +149,7 @@ def extract(file_configs: List[Dict] = None) -> List[pd.DataFrame]:
     else:
         logger.warning("No data extracted from any sources.")
         return []
+
 
 # ==========================================
 # 3. Execution
